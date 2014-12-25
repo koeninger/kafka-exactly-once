@@ -57,8 +57,9 @@ insert into txn_offsets(topic, part, off) values
           }
           sql"update txn_offsets set off = ${rp.untilOffset} where topic = ${rp.topic} and part = ${rp.partition}".update.apply()
         }
-        Iterator.empty
-      }
+        // need to trigger some output, empty map isn't sufficient
+        Seq(s"${rp.topic} ${rp.partition} ${rp.untilOffset}").toIterator
+      }.foreach(println)
     }
     ssc.start()
     ssc.awaitTermination()

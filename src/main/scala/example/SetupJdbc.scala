@@ -3,7 +3,7 @@ package example
 import scalikejdbc._
 
 object SetupJdbc {
-  val host = "localhost"
+  val host = "jdbc:postgresql://localhost/test"
   val driver = "org.postgresql.Driver"
   val user = "cody"
   val password = ""
