@@ -47,8 +47,7 @@ insert into txn_offsets(topic, part, off) values
       ssc, kafkaParams, fromOffsets, messageAndMetadata => messageAndMetadata.message)
 
     stream.foreachRDD { rdd =>
-      // there is no foreachWithIndex, but we need access to the partition info
-      rdd.mapPartitionsWithIndex { (i, iter) =>
+      rdd.foreachPartitionWithIndex { (i, iter) =>
         SetupJdbc()
         val rp = rdd.partitions(i).asInstanceOf[KafkaRDDPartition]
         DB.localTx { implicit session =>
@@ -67,9 +66,7 @@ Was a partition repeated after a worker failure?
 """)
           }
         }
-        // need to trigger some output, empty map isn't sufficient
-        Seq(s"${rp.topic} ${rp.partition} ${rp.untilOffset}").toIterator
-      }.foreach(println)
+      }
     }
     ssc.start()
     ssc.awaitTermination()
