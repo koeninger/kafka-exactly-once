@@ -49,13 +49,27 @@ insert into txn_offsets(topic, part, off) values
     stream.foreachRDD { rdd =>
       // there is no foreachWithIndex, but we need access to the partition info
       rdd.mapPartitionsWithIndex { (i, iter) =>
-        SetupJdbc()
         val rp = rdd.partitions(i).asInstanceOf[KafkaRDDPartition]
-        DB.localTx { implicit session =>
-          iter.foreach { msg =>
-            sql"insert into txn_data(msg) values (${msg})".update.apply
+        if (iter.hasNext) {
+          SetupJdbc()
+          DB.localTx { implicit session =>
+            iter.foreach { msg =>
+              sql"insert into txn_data(msg) values (${msg})".update.apply
+            }
+            // to be super paranoid, you could record offsets for each batch.
+            // offsets within a partition should be strictly increasing, so we wont worry that much.
+            val updated = sql"""
+update txn_offsets set off = ${rp.untilOffset}
+  where topic = ${rp.topic} and part = ${rp.partition} and off < ${rp.untilOffset}
+""".update.apply()
+            if (updated != 1) {
+              throw new Exception(s"""
+Got $updated rows affected when attempting to update offsets for
+ ${rp.topic} ${rp.partition} ${rp.fromOffset} ${rp.untilOffset}
+Was a partition repeated after a worker failure?
+""")
+            }
           }
-          sql"update txn_offsets set off = ${rp.untilOffset} where topic = ${rp.topic} and part = ${rp.partition}".update.apply()
         }
         // need to trigger some output, empty map isn't sufficient
         Seq(s"${rp.topic} ${rp.partition} ${rp.untilOffset}").toIterator
