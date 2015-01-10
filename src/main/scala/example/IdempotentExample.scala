@@ -41,7 +41,10 @@ create or replace rule idem_data_ignore_duplicate_inserts as
     val kc = new KafkaCluster(kafkaParams)
     val groupId = "testConsumer"
     val fromOffsets = kc.getConsumerOffsets(groupId, topicPartitions).right.toOption.
-      orElse(kc.getEarliestLeaderOffsets(topicPartitions).right.toOption).
+      // starting from beginning on any error isn't always the right idea, here just for example
+      orElse(kc.getEarliestLeaderOffsets(topicPartitions).right.toOption.map { offs =>
+        offs.map(kv => kv._1 -> kv._2.offset)
+      }).
       getOrElse(throw new Exception("couldn't get consumer offsets"))
 
     val stream = new DeterministicKafkaInputDStream[String, String, StringDecoder, StringDecoder, String](
@@ -57,7 +60,10 @@ create or replace rule idem_data_ignore_duplicate_inserts as
         }
       }
       val kafkaRDD = rdd.asInstanceOf[KafkaRDD[String, String, StringDecoder, StringDecoder, String]]
-      kc.setConsumerOffsets(groupId, kafkaRDD.untilOffsets).fold(
+      val nextOffsets = kafkaRDD.batch.map { kp =>
+        TopicAndPartition(kp.topic, kp.partition) -> kp.untilOffset
+      }.toMap
+      kc.setConsumerOffsets(groupId, nextOffsets).fold(
         err => throw new Exception("couldn't set consumer offsets"),
         ok => ()
       )
