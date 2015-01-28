@@ -13,7 +13,7 @@ libraryDependencies ++= Seq(
   // avoid an ivy bug
   "org.apache.spark" %% "spark-network-common" % sparkVersion % "provided",
   "org.apache.spark" %% "spark-network-shuffle" % sparkVersion % "provided",
-  ("org.apache.spark" %% "spark-streaming" % sparkVersion).
+  ("org.apache.spark" %% "spark-streaming" % sparkVersion % "provided").
     exclude("org.apache.spark", "spark-core_2.10"),
   ("org.apache.spark" %% "spark-streaming-kafka" % sparkVersion).
     exclude("org.apache.spark", "spark-core_2.10"),
