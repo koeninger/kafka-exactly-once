@@ -9,7 +9,8 @@ import org.apache.spark.SparkContext._
 import org.apache.spark.rdd.kafka.{KafkaCluster, KafkaRDDPartition}
 import org.apache.spark.streaming._
 import org.apache.spark.streaming.StreamingContext._
-import org.apache.spark.streaming.kafka.DeterministicKafkaInputDStream
+import org.apache.spark.rdd.kafka.OffsetRange
+import org.apache.spark.streaming.kafka.KafkaUtils
 
 object CheckpointedExample {
   val schema = """
@@ -48,12 +49,13 @@ insert into cp_data(topic, part, off, window_min, tstamp) values
         }.list.apply().toMap
     }
 
-    val stream = new DeterministicKafkaInputDStream[String, String, StringDecoder, StringDecoder, Long](
-      ssc, kafkaParams, fromOffsets, messageAndMetadata => messageAndMetadata.message.toLong)
+    val retries = 2
+    val stream = KafkaUtils.createNewStream[String, String, StringDecoder, StringDecoder, Long](
+      ssc, kafkaParams, fromOffsets, messageAndMetadata => messageAndMetadata.message.toLong, retries)
 
     stream.transform { rdd =>
       rdd.mapPartitionsWithIndex { (i, iter) =>
-        val rp = rdd.partitions(i).asInstanceOf[KafkaRDDPartition]
+        val rp = rdd.partitions(i).asInstanceOf[OffsetRange]
         iter.map { msg =>
           (rp.topic, rp.partition) -> (rp.untilOffset, msg)
         }

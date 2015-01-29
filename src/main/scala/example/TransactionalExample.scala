@@ -6,9 +6,9 @@ import scalikejdbc._
 
 import org.apache.spark.{SparkContext, SparkConf}
 import org.apache.spark.SparkContext._
-import org.apache.spark.rdd.kafka.{KafkaCluster, KafkaRDDPartition}
 import org.apache.spark.streaming._
-import org.apache.spark.streaming.kafka.DeterministicKafkaInputDStream
+import org.apache.spark.rdd.kafka.OffsetRange
+import org.apache.spark.streaming.kafka.KafkaUtils
 
 /** exactly-once semantics from kafka, by storing offsets in the same transaction as the data */
 object TransactionalExample {
@@ -43,13 +43,15 @@ insert into txn_offsets(topic, part, off) values
         }.list.apply().toMap
     }
 
-    val stream = new DeterministicKafkaInputDStream[String, String, StringDecoder, StringDecoder, String](
-      ssc, kafkaParams, fromOffsets, messageAndMetadata => messageAndMetadata.message)
+    val retries = 2
+
+    val stream = KafkaUtils.createNewStream[String, String, StringDecoder, StringDecoder, String](
+      ssc, kafkaParams, fromOffsets, messageAndMetadata => messageAndMetadata.message, retries)
 
     stream.foreachRDD { rdd =>
       rdd.foreachPartitionWithIndex { (i, iter) =>
         SetupJdbc()
-        val rp = rdd.partitions(i).asInstanceOf[KafkaRDDPartition]
+        val rp = rdd.partitions(i).asInstanceOf[OffsetRange]
         DB.localTx { implicit session =>
           iter.foreach { msg =>
             sql"insert into txn_data(msg) values (${msg})".update.apply

@@ -6,9 +6,9 @@ import scalikejdbc._
 
 import org.apache.spark.{SparkContext, SparkConf}
 import org.apache.spark.SparkContext._
-import org.apache.spark.rdd.kafka.{KafkaCluster, KafkaRDD}
 import org.apache.spark.streaming._
-import org.apache.spark.streaming.kafka.DeterministicKafkaInputDStream
+import org.apache.spark.streaming.kafka.KafkaUtils
+import org.apache.spark.rdd.kafka.HasOffsetRanges
 
 /** exactly-once semantics from kafka, by storing data idempotently so that replay is safe,
   and only storing offsets after data storage succeeds */
@@ -31,42 +31,28 @@ create or replace rule idem_data_ignore_duplicate_inserts as
     val ssc = new StreamingContext(new SparkConf, Seconds(60))
     val kafkaParams = Map("metadata.broker.list" -> "localhost:9092,localhost:9093,localhost:9094")
 
-    // could also use kc.getPartitions instead of hardcoding
-    val topicPartitions = Set(
-      TopicAndPartition("test", 0),
-      TopicAndPartition("test", 1)
-    )
+    println("write some code to lookup your previously existing consumer offsets from zookeeper if you need them")
 
-    // don't need to save offsets in a transaction, so example of using zookeeper / kafka offsets
-    val kc = new KafkaCluster(kafkaParams)
-    val groupId = "testConsumer"
-    val fromOffsets = kc.getConsumerOffsets(groupId, topicPartitions).right.toOption.
-      // starting from beginning on any error isn't always the right idea, here just for example
-      orElse(kc.getEarliestLeaderOffsets(topicPartitions).right.toOption.map { offs =>
-        offs.map(kv => kv._1 -> kv._2.offset)
-      }).
-      getOrElse(throw new Exception("couldn't get consumer offsets"))
+    println("""note that this will skip to the latest messages after a failure, unless you either checkpoint the stream,
+ or save offsets yourself and provide them to the constructor that takes fromOffsets""")
 
-    val stream = new DeterministicKafkaInputDStream[String, String, StringDecoder, StringDecoder, String](
-      ssc, kafkaParams, fromOffsets, messageAndMetadata => messageAndMetadata.message)
+    val stream = KafkaUtils.createNewStream[String, String, StringDecoder, StringDecoder](
+      ssc, kafkaParams, Set("test"))
 
     stream.foreachRDD { rdd =>
       rdd.foreachPartition { iter =>
         SetupJdbc()
-        iter.foreach { msg =>
+        iter.foreach { case (key, msg) =>
           DB.autoCommit { implicit session =>
             sql"insert into idem_data(msg) values (${msg})".update.apply
           }
         }
       }
-      val kafkaRDD = rdd.asInstanceOf[KafkaRDD[String, String, StringDecoder, StringDecoder, String]]
-      val nextOffsets = kafkaRDD.batch.map { kp =>
-        TopicAndPartition(kp.topic, kp.partition) -> kp.untilOffset
-      }.toMap
-      kc.setConsumerOffsets(groupId, nextOffsets).fold(
-        err => throw new Exception("couldn't set consumer offsets"),
-        ok => ()
-      )
+      val offsets = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
+      println("write some code to store zookeeper offsets if you want compatibility with existing monitoring.")
+      offsets.foreach { o =>
+        println(s"${o.topic} ${o.partition} ${o.fromOffset} ${o.untilOffset}")
+      }
     }
     ssc.start()
     ssc.awaitTermination()
