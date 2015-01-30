@@ -6,11 +6,9 @@ import scalikejdbc._
 
 import org.apache.spark.{SparkContext, SparkConf}
 import org.apache.spark.SparkContext._
-import org.apache.spark.rdd.kafka.{KafkaCluster, KafkaRDDPartition}
 import org.apache.spark.streaming._
 import org.apache.spark.streaming.StreamingContext._
-import org.apache.spark.rdd.kafka.OffsetRange
-import org.apache.spark.streaming.kafka.KafkaUtils
+import org.apache.spark.streaming.kafka.{KafkaUtils, HasOffsetRanges}
 
 object CheckpointedExample {
   val schema = """
@@ -54,10 +52,11 @@ insert into cp_data(topic, part, off, window_min, tstamp) values
       ssc, kafkaParams, fromOffsets, messageAndMetadata => messageAndMetadata.message.toLong, retries)
 
     stream.transform { rdd =>
+      val offsets = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
       rdd.mapPartitionsWithIndex { (i, iter) =>
-        val rp = rdd.partitions(i).asInstanceOf[OffsetRange]
+        val osr = offsets(i)
         iter.map { msg =>
-          (rp.topic, rp.partition) -> (rp.untilOffset, msg)
+          (osr.topic, osr.partition) -> (osr.untilOffset, msg)
         }
       }
     }.reduceByKeyAndWindow({ (a: (Long, Long), b: (Long, Long)) =>

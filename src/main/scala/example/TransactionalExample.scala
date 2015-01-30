@@ -7,8 +7,7 @@ import scalikejdbc._
 import org.apache.spark.{SparkContext, SparkConf}
 import org.apache.spark.SparkContext._
 import org.apache.spark.streaming._
-import org.apache.spark.rdd.kafka.OffsetRange
-import org.apache.spark.streaming.kafka.KafkaUtils
+import org.apache.spark.streaming.kafka.{KafkaUtils, HasOffsetRanges, OffsetRange}
 
 /** exactly-once semantics from kafka, by storing offsets in the same transaction as the data */
 object TransactionalExample {
@@ -49,26 +48,29 @@ insert into txn_offsets(topic, part, off) values
       ssc, kafkaParams, fromOffsets, messageAndMetadata => messageAndMetadata.message, retries)
 
     stream.foreachRDD { rdd =>
-      rdd.foreachPartitionWithIndex { (i, iter) =>
+      val offsets = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
+      rdd.mapPartitionsWithIndex { (i, iter) =>
         SetupJdbc()
-        val rp = rdd.partitions(i).asInstanceOf[OffsetRange]
+        val osr = offsets(i)
         DB.localTx { implicit session =>
           iter.foreach { msg =>
             sql"insert into txn_data(msg) values (${msg})".update.apply
           }
           val updated = sql"""
-update txn_offsets set off = ${rp.untilOffset}
-  where topic = ${rp.topic} and part = ${rp.partition} and off = ${rp.fromOffset}
+update txn_offsets set off = ${osr.untilOffset}
+  where topic = ${osr.topic} and part = ${osr.partition} and off = ${osr.fromOffset}
 """.update.apply()
           if (updated != 1) {
             throw new Exception(s"""
 Got $updated rows affected instead of 1 when attempting to update offsets for
- ${rp.topic} ${rp.partition} ${rp.fromOffset} -> ${rp.untilOffset}
+ ${osr.topic} ${osr.partition} ${osr.fromOffset} -> ${osr.untilOffset}
 Was a partition repeated after a worker failure?
 """)
           }
         }
-      }
+        Iterator.empty
+        // without an action, the job won't do anything, so empty foreach
+      }.foreach((_: Nothing) => ())
     }
     ssc.start()
     ssc.awaitTermination()

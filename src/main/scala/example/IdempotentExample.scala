@@ -7,8 +7,7 @@ import scalikejdbc._
 import org.apache.spark.{SparkContext, SparkConf}
 import org.apache.spark.SparkContext._
 import org.apache.spark.streaming._
-import org.apache.spark.streaming.kafka.KafkaUtils
-import org.apache.spark.rdd.kafka.HasOffsetRanges
+import org.apache.spark.streaming.kafka.{KafkaUtils, HasOffsetRanges}
 
 /** exactly-once semantics from kafka, by storing data idempotently so that replay is safe,
   and only storing offsets after data storage succeeds */
@@ -40,6 +39,7 @@ create or replace rule idem_data_ignore_duplicate_inserts as
       ssc, kafkaParams, Set("test"))
 
     stream.foreachRDD { rdd =>
+      val offsets = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
       rdd.foreachPartition { iter =>
         SetupJdbc()
         iter.foreach { case (key, msg) =>
@@ -48,7 +48,6 @@ create or replace rule idem_data_ignore_duplicate_inserts as
           }
         }
       }
-      val offsets = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
       println("write some code to store zookeeper offsets if you want compatibility with existing monitoring.")
       offsets.foreach { o =>
         println(s"${o.topic} ${o.partition} ${o.fromOffset} ${o.untilOffset}")
