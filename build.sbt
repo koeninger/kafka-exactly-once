@@ -6,6 +6,10 @@ scalaVersion := "2.10.4"
 
 val sparkVersion = "1.3.0-SNAPSHOT"
 
+externalResolvers ++= Seq(
+  "Local Maven Repository" at "file://"+Path.userHome.absolutePath+"/.m2/repository"
+)
+
 libraryDependencies ++= Seq(
   ("org.apache.spark" %% "spark-core" % sparkVersion % "provided").
     exclude("org.apache.spark", "spark-network-common_2.10").

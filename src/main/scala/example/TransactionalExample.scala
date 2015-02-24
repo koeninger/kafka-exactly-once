@@ -42,10 +42,8 @@ insert into txn_offsets(topic, part, off) values
         }.list.apply().toMap
     }
 
-    val retries = 2
-
-    val stream = KafkaUtils.createNewStream[String, String, StringDecoder, StringDecoder, String](
-      ssc, kafkaParams, fromOffsets, messageAndMetadata => messageAndMetadata.message, retries)
+    val stream = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder, String](
+      ssc, kafkaParams, fromOffsets, messageAndMetadata => messageAndMetadata.message)
 
     stream.foreachRDD { rdd =>
       val offsets = rdd.asInstanceOf[HasOffsetRanges].offsetRanges

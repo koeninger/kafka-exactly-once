@@ -35,7 +35,7 @@ create or replace rule idem_data_ignore_duplicate_inserts as
     println("""note that this will skip to the latest messages after a failure, unless you either checkpoint the stream,
  or save offsets yourself and provide them to the constructor that takes fromOffsets""")
 
-    val stream = KafkaUtils.createNewStream[String, String, StringDecoder, StringDecoder](
+    val stream = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder](
       ssc, kafkaParams, Set("test"))
 
     stream.foreachRDD { rdd =>

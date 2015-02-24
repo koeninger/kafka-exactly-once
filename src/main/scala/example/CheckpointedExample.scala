@@ -47,9 +47,8 @@ insert into cp_data(topic, part, off, window_min, tstamp) values
         }.list.apply().toMap
     }
 
-    val retries = 2
-    val stream = KafkaUtils.createNewStream[String, String, StringDecoder, StringDecoder, Long](
-      ssc, kafkaParams, fromOffsets, messageAndMetadata => messageAndMetadata.message.toLong, retries)
+    val stream = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder, Long](
+      ssc, kafkaParams, fromOffsets, messageAndMetadata => messageAndMetadata.message.toLong)
 
     stream.transform { rdd =>
       val offsets = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
