@@ -2,39 +2,46 @@ package example
 
 import kafka.serializer.StringDecoder
 import kafka.common.TopicAndPartition
+import kafka.message.MessageAndMetadata
 import scalikejdbc._
+import com.typesafe.config.ConfigFactory
 
 import org.apache.spark.{SparkContext, SparkConf}
 import org.apache.spark.SparkContext._
 import org.apache.spark.streaming._
+import org.apache.spark.streaming.dstream.InputDStream
 import org.apache.spark.streaming.kafka.{KafkaUtils, HasOffsetRanges, OffsetRange}
 
 /** exactly-once semantics from kafka, by storing offsets in the same transaction as the data */
 object TransactionalExample {
-  val schema = """
-create table txn_data(
-  msg character varying(255)
-);
-
-create table txn_offsets(
-  topic character varying(255),
-  part integer,
-  off bigint,
-  unique (topic, part)
-);
-
-insert into txn_offsets(topic, part, off) values
--- or whatever your initial offsets are, if non-0
-  ('test', 0, 0),
-  ('test', 1, 0)
-;
-"""
-
   def main(args: Array[String]): Unit = {
-    val ssc = new StreamingContext(new SparkConf, Seconds(60))
-    val kafkaParams = Map("metadata.broker.list" -> "localhost:9092,localhost:9093,localhost:9094")
+    val conf = ConfigFactory.load
+    val kafkaParams = Map(
+      "metadata.broker.list" -> conf.getString("kafka.brokers")
+    )
+    val jdbcDriver = conf.getString("jdbc.driver")
+    val jdbcUrl = conf.getString("jdbc.url")
+    val jdbcUser = conf.getString("jdbc.user")
+    val jdbcPassword = conf.getString("jdbc.password")
 
-    SetupJdbc()
+    val ssc = setupSsc(kafkaParams, jdbcDriver, jdbcUrl, jdbcUser, jdbcPassword)()
+    ssc.start()
+    ssc.awaitTermination()
+
+  }
+
+  def setupSsc(
+    kafkaParams: Map[String, String],
+    jdbcDriver: String,
+    jdbcUrl: String,
+    jdbcUser: String,
+    jdbcPassword: String
+  )(): StreamingContext = {
+    val ssc = new StreamingContext(new SparkConf, Seconds(60))
+
+    SetupJdbc(jdbcDriver, jdbcUrl, jdbcUser, jdbcPassword)
+
+    // begin from the the offsets committed to the database
     val fromOffsets = DB.readOnly { implicit session =>
       sql"select topic, part, off from txn_offsets".
         map { resultSet =>
@@ -42,35 +49,58 @@ insert into txn_offsets(topic, part, off) values
         }.list.apply().toMap
     }
 
-    val stream = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder, String](
-      ssc, kafkaParams, fromOffsets, messageAndMetadata => messageAndMetadata.message)
+    val stream: InputDStream[Long] = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder, Long](
+      ssc, kafkaParams, fromOffsets,
+      // we're just going to count messages, don't care about the contents, so convert each message to a 1
+      (mmd: MessageAndMetadata[String, String]) => 1L)
 
     stream.foreachRDD { rdd =>
+      // Cast the rdd to an interface that lets us get a collection of offset ranges
       val offsets = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
+
       rdd.mapPartitionsWithIndex { (i, iter) =>
-        SetupJdbc()
-        val osr = offsets(i)
+        SetupJdbc(jdbcDriver, jdbcUrl, jdbcUser, jdbcPassword)
+
+        // index to get the correct offset range for the rdd partition we're working on
+        val osr: OffsetRange = offsets(i)
+
+        // simplest possible "metric", namely a count of messages
+        val metric = iter.sum
+
+        // localTx is transactional, if metric update or offset update fails, neither will be committed
         DB.localTx { implicit session =>
-          iter.foreach { msg =>
-            sql"insert into txn_data(msg) values (${msg})".update.apply
+          // store metric data
+          val metricRows = sql"""
+update txn_data(topic, metric) set metric = metric + ${metric})
+  where topic = ${osr.topic}
+""".update.apply()
+          if (metricRows != 1) {
+            throw new Exception(s"""
+Got $metricRows rows affected instead of 1 when attempting to update metrics for
+ ${osr.topic} ${osr.partition} ${osr.fromOffset} -> ${osr.untilOffset}
+""")
           }
-          val updated = sql"""
+
+          // store offsets
+          val offsetRows = sql"""
 update txn_offsets set off = ${osr.untilOffset}
   where topic = ${osr.topic} and part = ${osr.partition} and off = ${osr.fromOffset}
 """.update.apply()
-          if (updated != 1) {
+          if (offsetRows != 1) {
             throw new Exception(s"""
-Got $updated rows affected instead of 1 when attempting to update offsets for
+Got $offsetRows rows affected instead of 1 when attempting to update offsets for
  ${osr.topic} ${osr.partition} ${osr.fromOffset} -> ${osr.untilOffset}
 Was a partition repeated after a worker failure?
 """)
           }
         }
         Iterator.empty
-        // without an action, the job won't do anything, so empty foreach
-      }.foreach((_: Nothing) => ())
+      }.foreach {
+        // Without an action, the job won't get scheduled, so empty foreach to force it
+        // This is a little awkward, but there is no foreachPartitionWithIndex method on rdds
+        (_: Nothing) => ()
+      }
     }
-    ssc.start()
-    ssc.awaitTermination()
+    ssc
   }
 }

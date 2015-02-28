@@ -4,7 +4,7 @@ name := "kafka-exactly-once"
 
 scalaVersion := "2.10.4"
 
-val sparkVersion = "1.3.0-SNAPSHOT"
+val sparkVersion = "1.3.0"
 
 externalResolvers ++= Seq(
   "Local Maven Repository" at "file://"+Path.userHome.absolutePath+"/.m2/repository"
@@ -24,7 +24,8 @@ libraryDependencies ++= Seq(
   ("org.scalikejdbc" %% "scalikejdbc" % "2.2.1").
     exclude("org.slf4j", "slf4j-api"),
   ("org.postgresql" % "postgresql" % "9.3-1101-jdbc4").
-    exclude("org.slf4j", "slf4j-api")
+    exclude("org.slf4j", "slf4j-api"),
+  "com.typesafe" % "config" % "1.2.1"
 )
 
 assemblySettings
