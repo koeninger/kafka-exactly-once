@@ -53,6 +53,7 @@ object IdempotentExample {
 
     stream.foreachRDD { rdd =>
       rdd.foreachPartition { iter =>
+        // make sure connection pool is set up on the executor before writing
         SetupJdbc(jdbcDriver, jdbcUrl, jdbcUser, jdbcPassword)
 
         iter.foreach { case (key, msg) =>
