@@ -40,8 +40,8 @@ object IdempotentExample {
   def setupSsc(
     topics: Set[String],
     kafkaParams: Map[String, String],
-    jdbcUrl: String,
     jdbcDriver: String,
+    jdbcUrl: String,
     jdbcUser: String,
     jdbcPassword: String,
     checkpointDir: String

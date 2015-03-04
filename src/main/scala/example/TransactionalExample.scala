@@ -71,7 +71,7 @@ object TransactionalExample {
         DB.localTx { implicit session =>
           // store metric data
           val metricRows = sql"""
-update txn_data(topic, metric) set metric = metric + ${metric})
+update txn_data set metric = metric + ${metric}
   where topic = ${osr.topic}
 """.update.apply()
           if (metricRows != 1) {
