@@ -121,7 +121,7 @@ A significant difference from the batch use case is that there **is** some impor
 
 Again, no consumer offsets are stored in Zookeeper.  If you want interop with existing Kafka monitoring tools that talk to ZK directly, you'll need to store the offsets into ZK yourself (this doesn't mean it needs to be your system of record for offsets, you can just duplicate them there).
 
-Note that because Kafka is being treated as a durable store of messages, not a transient network source, you don't need to duplicate messages into HDFS for error recovery.  This design does have some implications, however.   The first is that you can't read messages that no longer exist in Kafka, so make sure your retention is adequate.  The second is that you can't read messages that dont exist in Kafka yet. To put it another way, the consumers on the executors aren't polling for new messages, the driver is just periodically checking with the leaders at every batch interval, so there is some inherent latency.
+Note that because Kafka is being treated as a durable store of messages, not a transient network source, you don't need to duplicate messages into HDFS for error recovery.  This design does have some implications, however.   The first is that you can't read messages that no longer exist in Kafka, so make sure your retention is adequate.  The second is that you can't read messages that don't exist in Kafka yet. To put it another way, the consumers on the executors aren't polling for new messages, the driver is just periodically checking with the leaders at every batch interval, so there is some inherent latency.
 
 ### HasOffsetRanges
 
@@ -257,7 +257,7 @@ The final thing to notice about the example is that it's important to ensure tha
     DB.localTx { implicit session =>
       // store metric data
       val metricRows = sql"""
-    update txn_data(topic, metric) set metric = metric + ${metric}
+    update txn_data set metric = metric + ${metric}
       where topic = ${osr.topic}
     """.update.apply()
       if (metricRows != 1) {
