@@ -13,7 +13,17 @@ I'll assume you're familiar with the [Spark Streaming docs](http://spark.apache.
 
 The new API for both Kafka RDD and DStream is in the spark-streaming-kafka artifact.  If version 1.3.0 of Spark is not yet released by the time you're reading this, you'll need to build it locally.
 
+SBT dependency:
+
     libraryDependencies += "org.apache.spark" %% "spark-streaming-kafka" % "1.3.0"
+
+Maven dependency:
+
+    <dependency>
+      <groupId>org.apache.spark</groupId>
+      <artifactId>spark-streaming-kafka_2.10</artifactId>
+      <version>1.3.0</version>
+    </dependency>
 
 To read from Kafka in a Spark Streaming job, use KafkaUtils.createDirectStream:
 
