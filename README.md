@@ -1,6 +1,6 @@
 kafka-exactly-once
 ==================
-see https://issues.apache.org/jira/browse/SPARK-4964
+For more detail, see the [blog post](https://github.com/koeninger/kafka-exactly-once/blob/master/blogpost.md) or the [jira ticket](https://issues.apache.org/jira/browse/SPARK-4964)
 
 If you want to try running this,
 

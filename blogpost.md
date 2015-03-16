@@ -11,7 +11,7 @@ I'll assume you're familiar with the [Spark Streaming docs](http://spark.apache.
 
 ## Basic Usage
 
-The new API for both Kafka RDD and DStream is in the spark-streaming-kafka artifact.  If version 1.3.0 of Spark is not yet released by the time you're reading this, you'll need to build it locally.
+The new API for both Kafka RDD and DStream is in the spark-streaming-kafka artifact.
 
 SBT dependency:
 
