@@ -169,6 +169,7 @@ Also note that because of the 1:1 correspondence between offset ranges and rdd p
            // now the partition contains values from more than one topic
         }
 
+Because of this, if you want to apply a per-partition transformation using offset range information, it's easiest to use normal Scala code to do the work inside a single Spark mapPartitionsWithIndex call.
 
 ## Delivery Semantics
 
