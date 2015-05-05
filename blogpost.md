@@ -154,7 +154,21 @@ One other implementation detail is a public interface, HasOffsetRanges, with a s
           val end = osr.untilOffset
           ...
 
-The reason for this layer of indirection is because the static type used by DStream methods like foreachRDD and transform is just RDD, not the type of the underlying (and in this case, private) implementation.  Because the DStream returned by createDirectStream generates batches of KafkaRDD, you can safely cast to HasOffsetRanges.  Also note that because of the 1:1 correspondence between offset ranges and rdd partitions, the indexes of the rdd partitions correspond to the indexes into the array returned by offsetRanges.
+The reason for this layer of indirection is because the static type used by DStream methods like foreachRDD and transform is just RDD, not the type of the underlying (and in this case, private) implementation.  Because the DStream returned by createDirectStream generates batches of KafkaRDD, you can safely cast to HasOffsetRanges.
+
+Also note that because of the 1:1 correspondence between offset ranges and rdd partitions, the indexes of the rdd partitions correspond to the indexes into the array returned by offsetRanges.  Similarly, all of the messages in the given Spark partition are from the same Kafka topic. However, this 1:1 correspondence only lasts until the first Spark transformation that incurs a shuffle (e.g. reduceByKey), because shuffles can repartition the data.
+
+        // WON'T DO WHAT YOU WANT
+        rdd.mapPartitionsWithIndex { (i, iter) =>
+          val osr: OffsetRange = offsets(i)
+          iter.map { x =>
+            (x.someKey, (osr.topic, x.someValue))
+          }
+        }.reduceByKey  // this changes partitioning
+        .foreachPartition {
+           // now the partition contains values from more than one topic
+        }
+
 
 ## Delivery Semantics
 
