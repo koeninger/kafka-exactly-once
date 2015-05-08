@@ -17,6 +17,10 @@
         width: 100%;
         height: auto;
       }
+      img#kixer-logo {
+        width: 130px;
+        height: 54px;
+      }
       ul, ol {
         margin: 6px 0 6px 0;  
       }
@@ -35,11 +39,118 @@ class: center, middle
 
 cody@koeninger.org
 
+<image src="slides/kixer-logo.png" id="kixer-logo" />
+
 https://github.com/koeninger/kafka-exactly-once
 
 ---
 
+## Kafka is a ~~message queue~~ circular buffer
+
+
+* Fixed size, based on disk space or time
+* Oldest messages deleted to maintain size
+* Split into topic/partition
+* Indexed only by offset
+* Client tracks read offset, not server
+
+###Delivery semantics are _your responsibility_
+
+From Kafka, through a transformation, to results in your data store
+
+---
+
+##At-most-once
+
+1. Save offsets
+2. !! Possible failure !!
+3. Save results
+
+###On failure, restart at saved offsets, messages are lost
+
+---
+
+##At-least-once
+
+1. Save results
+2. !! Possible failure !!
+3. Save offsets
+
+###On failure, restart at saved offsets, messages are repeated
+
+No possible magic config option to do better than this
+
+---
+
+## Idempotent exactly-once
+
+1. Save results with a natural unique key
+2. !! Possible failure !!
+3. Save offsets
+
+###On failure, messages are repeated, but we don't care
+
+Immutable messages and a pure transformation yield the same results
+
+---
+
+## Idempotent pros / cons
+
+Pro:
+* Simple
+* Works well for shape-preserving transformations (map)
+
+Con:
+* May be hard to identify natural unique key
+* Especially hard for aggregate transformations (fold)
+* Won't work for destructive updates
+
+Note:
+* Results and offsets may be in different data stores
+
+---
+
+## Transactional exactly-once
+
+1. Begin transaction
+2. Save results
+3. Save offsets
+4. Ensure offsets are ok (increasing without gaps)
+5. Commit transaction
+
+### On failure, rollback, results and offsets remain in sync
+
+---
+
+## Transactional pros / cons
+
+Pro:
+* Works easily for any transformation
+* Destructive updates ok
+
+Con:
+* More complex
+* Requires a transactional data store
+
+Note:
+* Results and offsets must be in same data store
+
+---
+
 ![](slides/kafka-old.png)
+
+---
+## Receiver-based stream pros / cons
+
+Pro:
+* WAL design could work with non-Kafka data sources
+
+Con:
+* Long running receivers make parallelism awkward and costly
+* Duplication of write operations
+* Dependent on HDFS
+* Must use idempotence for exactly-once
+* No access to offsets, can't use transactional approach
 
 ---
 
@@ -47,7 +158,92 @@ https://github.com/koeninger/kafka-exactly-once
 
 ---
 
+## Direct stream pros / cons
+
+Pro:
+* Spark partitions 1:1 with Kafka topic/partitions, simple parallelism
+* No duplicate writes
+* No dependency on HDFS
+* Access to offsets, can use idempotent or transactional
+
+Con:
+* Specific to Kafka
+* Need adequate Kafka retention (OffsetOutOfRange is _your fault_)
+
+---
+
+### Don't care about semantics?
+
 ![](slides/spark-kafka-change-cpu-utilization.png)
+
+### How about server cost?
+
+---
+
+## Basic Usage
+
+```scala
+KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder](
+  streamingContext,
+  Map(
+    "metadata.broker.list" -> "localhost:9092,anotherhost:9092"),
+    "auto.offset.reset" -> "largest"
+  ),
+  Set("sometopic", "anothertopic")
+)
+```
+auto.offset.reset -> largest:
+* Starts at latest offset, thus losing data
+* Not at-most-once (need to set maxFailures as well)
+
+auto.offset.reset -> smallest:
+* Starts at earliest offset
+* At-least-once, but replays whole log
+
+---
+
+## Where to store offsets
+
+Checkpoint:
+* Easy
+* No need to access offsets, will be used on restart
+* Must use idempotent, not transactional
+* Checkpoints may not be recoverable
+
+Your own data store:
+* Complex
+* Need to access offsets, save them, and provide them on (re)start
+* Idempotent or transactional
+* Offsets are just as recoverable as your results
+
+---
+
+## Checkpoint
+
+```scala
+def functionToCreateContext(): StreamingContext = {
+val ssc = new StreamingContext(...)   // new context
+val stream = KafkaUtils.createDirectStream(...) // setup DStream
+...
+ssc.checkpoint(checkpointDirectory)   // set checkpoint directory
+ssc
+}
+
+// Get StreamingContext from checkpoint data or create a new one
+val context = StreamingContext.getOrCreate(
+  checkpointDirectory,
+  functionToCreateContext _)
+```
+
+That's it, just the same as any other checkpoint
+
+---
+
+## Your own data store - providing offsets on (re)start
+
+
+
+
 
     </textarea>
     <script src="slides/remark-latest.min.js">
