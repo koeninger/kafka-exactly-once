@@ -47,10 +47,10 @@ https://github.com/koeninger/kafka-exactly-once
 
 ## Kafka is a ~~message queue~~ circular buffer
 
-
+* Split into topic/partition
 * Fixed size, based on disk space or time
 * Oldest messages deleted to maintain size
-* Split into topic/partition
+* Messages are otherwise immutable
 * Indexed only by offset
 * Client tracks read offset, not server
 
@@ -172,7 +172,7 @@ Con:
 
 ---
 
-### Don't care about semantics?
+## Don't care about semantics?
 
 ![](slides/spark-kafka-change-cpu-utilization.png)
 
@@ -180,7 +180,7 @@ Con:
 
 ---
 
-## Basic Usage
+## Basic direct stream API
 
 ```scala
 val stream: InputDStream[(String, String)] =
@@ -193,6 +193,11 @@ val stream: InputDStream[(String, String)] =
     Set("sometopic", "anothertopic")
   )
 ```
+
+---
+
+## Basic direct stream API delivery semantics
+
 auto.offset.reset -> largest:
 * Starts at latest offset, thus losing data
 * Not at-most-once (need to set maxFailures as well)
@@ -200,6 +205,8 @@ auto.offset.reset -> largest:
 auto.offset.reset -> smallest:
 * Starts at earliest offset
 * At-least-once, but replays whole log
+
+### If you want finer grained control, must store offsets somewhere
 
 ---
 
@@ -319,7 +326,7 @@ stream.foreachRDD { rdd =>
 
     val perPartitionResult = iter.someOtherTransformation
 
-    // Your save method.  Note this runs on the executor.
+    // Your save method.  Note this runs on the executors.
     mySavePartition(offsetRange, perPartitionResult)
   }
 }
@@ -329,7 +336,38 @@ This is **not safe** because there is a shuffle, so no longer 1:1
 rdd.reduceByKey.foreachPartition { ...
 ```
 
+---
+## Storing offsets transactionally
 
+Make sure that start of this offset range matches end of last saved offset range
+
+```scala
+// localTx is transactional
+DB.localTx { implicit session =>
+  // store results
+  ...
+
+  // store offsets
+  val offsetRows = sql"""
+update txn_offsets set off = ${osr.untilOffset}
+where topic = ${osr.topic} and part = ${osr.partition} and off = ${osr.fromOffset}
+""".update.apply()
+
+  if (offsetRows != 1) {
+    // rollback and/or throw exception
+  }
+}
+```
+---
+class: center, middle
+
+# Questions?
+
+cody@koeninger.org
+
+<image src="slides/kixer-logo.png" id="kixer-logo" />
+
+https://github.com/koeninger/kafka-exactly-once
 
     </textarea>
     <script src="slides/remark-latest.min.js">

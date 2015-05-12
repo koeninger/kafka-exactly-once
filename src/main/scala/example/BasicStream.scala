@@ -1,7 +1,7 @@
 package example
 
 object BasicStream {
-  def main(args: Array[String]) {
+  def main(args: Array[String]): Unit = {
     import kafka.serializer.StringDecoder
     import org.apache.spark.SparkConf
     import org.apache.spark.streaming.{Seconds, StreamingContext}
@@ -16,8 +16,9 @@ object BasicStream {
     val stream = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder](
       ssc, kafkaParams, topics)
 
-    stream.print
+    stream.print()
 
+    ssc.start()
     ssc.awaitTermination()
   }
 }

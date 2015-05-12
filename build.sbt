@@ -29,3 +29,8 @@ libraryDependencies ++= Seq(
 )
 
 assemblySettings
+
+mergeStrategy in assembly := {
+  case PathList("org", "apache", "spark", "unused", "UnusedStubClass.class") => MergeStrategy.first
+  case x => (mergeStrategy in assembly).value(x)
+}

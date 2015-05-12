@@ -140,12 +140,12 @@ One other implementation detail is a public interface, HasOffsetRanges, with a s
       val stream = KafkaUtils.createDirectStream(...)
       ...      
       stream.foreachRDD { rdd =>
-        // Cast the rdd to an interface that lets us get a collection of offset ranges
-        val offsets = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
+        // Cast the rdd to an interface that lets us get an array of OffsetRange
+        val offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
         
-        rdd.mapPartitionsWithIndex { (i, iter) =>
+        rdd.foreachPartition { iter =>
           // index to get the correct offset range for the rdd partition we're working on
-          val osr: OffsetRange = offsets(i)
+          val osr: OffsetRange = offsetRanges(TaskContext.get.partitionId)
 
           // get any needed data from the offset range
           val topic = osr.topic
@@ -243,9 +243,11 @@ The first important point is that the stream is started using the last successfu
 
 For the very first time the job is run, the table can be pre-loaded with appropriate starting offsets.
 
-The example accesses offset ranges on a per-partition basis, as mentioned in the discussion of HasOffsetRanges above.  The important thing to notice about mapPartitionsWithIndex is that it's a transformation, and there is no equivalent foreachPartitionWithIndex action.  RDD transformations are generally lazy, so unless you add an output action of some kind Spark will never schedule the job to actually do anything.  Calling foreach on the RDD with an empty body is sufficient.  Also notice that some iterator methods, such as map, are lazy.  If you're setting up transient state, like a network or database connection, by the time the map is fully forced the connection may already be closed.  In that case, be sure to instead use methods like foreach, that eagerly consume the iterator.
+The example accesses offset ranges on a per-partition basis, as mentioned in the discussion of HasOffsetRanges above.  Also notice that some iterator methods, such as map, are lazy.  If you're setting up transient state, like a network or database connection, by the time the map is fully forced the connection may already be closed.  In that case, be sure to instead use methods like foreach, that eagerly consume the iterator.
 
-      rdd.mapPartitionsWithIndex { (i, iter) =>
+      rdd.foreachPartition { iter =>
+        val osr: OffsetRange = offsetRanges(TaskContext.get.partitionId)
+
         // set up some connection
 
         iter.foreach {
@@ -253,12 +255,6 @@ The example accesses offset ranges on a per-partition basis, as mentioned in the
         }
 
         // close the connection
-        
-        Iterator.empty
-      }.foreach {
-        // Without an action, the job won't get scheduled, so empty foreach to force it
-        // This is a little awkward, but there is no foreachPartitionWithIndex method on rdds
-        (_: Nothing) => ()
       }
 
 The final thing to notice about the example is that it's important to ensure that saving the results and saving the offsets either both succeed, or both fail.  Storing offsets should fail if the prior committed offset doesn't equal the beginning of the current offset range; this prevents gaps or repeats.  Kafka semantics ensure that there aren't gaps in messages within a range of offsets (if you're especially concerned, you could verify by comparing the size of the offset range to the number of messages).
