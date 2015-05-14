@@ -299,7 +299,7 @@ stream.foreachRDD { rdd =>
   // Cast the rdd to an interface that lets us get an array of OffsetRange
   val offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
 
-  val results = rdd.someTransformation 
+  val results = rdd.someTransformationUsingSparkMethods
   ...
   // Your save method. Note that this runs on the driver
   mySaveBatch(offsetRanges, results)
@@ -324,7 +324,7 @@ stream.foreachRDD { rdd =>
     // index to get the correct offset range for the rdd partition we're working on
     val offsetRange: OffsetRange = offsetRanges(TaskContext.get.partitionId)
 
-    val perPartitionResult = iter.someOtherTransformation
+    val perPartitionResult = iter.someTransformationUsingScalaMethods
 
     // Your save method.  Note this runs on the executors.
     mySavePartition(offsetRange, perPartitionResult)
