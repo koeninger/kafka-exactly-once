@@ -6,7 +6,7 @@ import kafka.message.MessageAndMetadata
 import scalikejdbc._
 import com.typesafe.config.ConfigFactory
 
-import org.apache.spark.{SparkContext, SparkConf}
+import org.apache.spark.{SparkContext, SparkConf, TaskContext}
 import org.apache.spark.SparkContext._
 import org.apache.spark.streaming._
 import org.apache.spark.streaming.dstream.InputDStream
@@ -55,14 +55,14 @@ object TransactionalExample {
       (mmd: MessageAndMetadata[String, String]) => 1L)
 
     stream.foreachRDD { rdd =>
-      // Cast the rdd to an interface that lets us get a collection of offset ranges
-      val offsets = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
+      // Cast the rdd to an interface that lets us get an array of OffsetRange
+      val offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
 
-      rdd.mapPartitionsWithIndex { (i, iter) =>
+      rdd.foreachPartition { iter =>
         SetupJdbc(jdbcDriver, jdbcUrl, jdbcUser, jdbcPassword)
 
         // index to get the correct offset range for the rdd partition we're working on
-        val osr: OffsetRange = offsets(i)
+        val osr: OffsetRange = offsetRanges(TaskContext.get.partitionId)
 
         // simplest possible "metric", namely a count of messages
         val metric = iter.sum
@@ -94,11 +94,6 @@ Was a partition repeated after a worker failure?
 """)
           }
         }
-        Iterator.empty
-      }.foreach {
-        // Without an action, the job won't get scheduled, so empty foreach to force it
-        // This is a little awkward, but there is no foreachPartitionWithIndex method on rdds
-        (_: Nothing) => ()
       }
     }
     ssc
