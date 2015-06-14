@@ -1,18 +1,20 @@
 package example
 
+import kafka.serializer.StringDecoder
+import org.apache.spark.{SparkConf, TaskContext}
+import org.apache.spark.streaming.{Seconds, StreamingContext}
+import org.apache.spark.streaming.kafka.{KafkaUtils, HasOffsetRanges, OffsetRange}
+import com.typesafe.config.ConfigFactory
+
 /** example of how windowing changes partitioning */
 object Windowed {
   def main(args: Array[String]): Unit = {
-    import kafka.serializer.StringDecoder
-    import org.apache.spark.{SparkConf, TaskContext}
-    import org.apache.spark.streaming.{Seconds, StreamingContext}
-    import org.apache.spark.streaming.kafka.{KafkaUtils, HasOffsetRanges, OffsetRange}
-
+    val conf = ConfigFactory.load
     val ssc = new StreamingContext(new SparkConf, Seconds(1))
 
-    val kafkaParams = Map("metadata.broker.list" -> "localhost:9092,localhost:9093,localhost:9094")
+    val kafkaParams = Map("metadata.broker.list" -> conf.getString("kafka.brokers"))
 
-    val topics = args.toSet
+    val topics = conf.getString("kafka.topics").split(",").toSet
 
     val stream = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder](
       ssc, kafkaParams, topics)
