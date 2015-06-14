@@ -12,8 +12,10 @@ import org.apache.spark.streaming._
 import org.apache.spark.streaming.dstream.InputDStream
 import org.apache.spark.streaming.kafka.{KafkaUtils, HasOffsetRanges, OffsetRange}
 
-/** exactly-once semantics from kafka, by storing offsets in the same transaction as the data */
-object TransactionalExample {
+/** exactly-once semantics from kafka, by storing offsets in the same transaction as the results
+  Offsets and results will be stored per-batch, on the driver
+  */
+object TransactionalPerBatch {
   def main(args: Array[String]): Unit = {
     val conf = ConfigFactory.load
     val kafkaParams = Map(
@@ -49,39 +51,45 @@ object TransactionalExample {
         }.list.apply().toMap
     }
 
-    val stream: InputDStream[Long] = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder, Long](
+    val stream: InputDStream[(String,Long)] = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder, (String, Long)](
       ssc, kafkaParams, fromOffsets,
-      // we're just going to count messages, don't care about the contents, so convert each message to a 1
-      (mmd: MessageAndMetadata[String, String]) => 1L)
+      // we're just going to count messages per topic, don't care about the contents, so convert each message to (topic, 1)
+      (mmd: MessageAndMetadata[String, String]) => (mmd.topic, 1L))
 
     stream.foreachRDD { rdd =>
+      // Note this block is running on the driver
+
       // Cast the rdd to an interface that lets us get an array of OffsetRange
       val offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
 
-      rdd.foreachPartition { iter =>
-        SetupJdbc(jdbcDriver, jdbcUrl, jdbcUser, jdbcPassword)
+      // simplest possible "metric", namely a count of messages per topic
+      // Notice the aggregation is done using spark methods, and results collected back to driver
+      val results = rdd.reduceByKey {
+        // This is the only block of code running on the executors.
+        // reduceByKey did a shuffle, but that's fine, we're not relying on anything special about partitioning here
+        _+_
+      }.collect
 
-        // index to get the correct offset range for the rdd partition we're working on
-        val osr: OffsetRange = offsetRanges(TaskContext.get.partitionId)
+      // Back to running on the driver
 
-        // simplest possible "metric", namely a count of messages
-        val metric = iter.sum
-
-        // localTx is transactional, if metric update or offset update fails, neither will be committed
-        DB.localTx { implicit session =>
-          // store metric data
+      // localTx is transactional, if metric update or offset update fails, neither will be committed
+      DB.localTx { implicit session =>
+        // store metric results
+        results.foreach { pair =>
+          val (topic, metric) = pair
           val metricRows = sql"""
 update txn_data set metric = metric + ${metric}
-  where topic = ${osr.topic}
+  where topic = ${topic}
 """.update.apply()
           if (metricRows != 1) {
             throw new Exception(s"""
-Got $metricRows rows affected instead of 1 when attempting to update metrics for
- ${osr.topic} ${osr.partition} ${osr.fromOffset} -> ${osr.untilOffset}
+Got $metricRows rows affected instead of 1 when attempting to update metrics for $topic
 """)
           }
+        }
 
-          // store offsets
+        // store offsets
+        offsetRanges.foreach { osr =>
           val offsetRows = sql"""
 update txn_offsets set off = ${osr.untilOffset}
   where topic = ${osr.topic} and part = ${osr.partition} and off = ${osr.fromOffset}
