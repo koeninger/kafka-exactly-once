@@ -1,25 +1,36 @@
 package example
 
-import kafka.serializer.StringDecoder
-import kafka.common.TopicAndPartition
+import org.apache.kafka.common.serialization.StringDeserializer
+import org.apache.kafka.clients.consumer.ConsumerRecord
+
 import scalikejdbc._
 import com.typesafe.config.ConfigFactory
 
 import org.apache.spark.{SparkContext, SparkConf}
 import org.apache.spark.SparkContext._
 import org.apache.spark.streaming._
-import org.apache.spark.streaming.kafka.{KafkaUtils, HasOffsetRanges}
+import org.apache.spark.streaming.kafka.{DirectKafkaInputDStream, HasOffsetRanges}
+
+import scala.collection.JavaConverters._
 
 /** exactly-once semantics from kafka, by storing data idempotently so that replay is safe */
 object IdempotentExample {
   def main(args: Array[String]): Unit = {
     val conf = ConfigFactory.load
     val topics = conf.getString("kafka.topics").split(",").toSet
-    val kafkaParams = Map(
-      "metadata.broker.list" -> conf.getString("kafka.brokers"),
+    val driverKafkaParams = Map[String, Object](
+      "bootstrap.servers" -> conf.getString("kafka.brokers"),
+      "key.deserializer" -> classOf[StringDeserializer],
+      "value.deserializer" -> classOf[StringDeserializer],
+      "group.id" -> "example",
       // start from the smallest available offset, ie the beginning of the kafka log
       "auto.offset.reset" -> "smallest"
     )
+    val executorKafkaParams = driverKafkaParams ++ Map(
+      "group.id" -> "example-executor",
+      "auto.offset.reset" -> "none"
+    )
+
     val jdbcDriver = conf.getString("jdbc.driver")
     val jdbcUrl = conf.getString("jdbc.url")
     val jdbcUser = conf.getString("jdbc.user")
@@ -31,7 +42,7 @@ object IdempotentExample {
 
     val ssc = StreamingContext.getOrCreate(
       checkpointDir,
-      setupSsc(topics, kafkaParams, jdbcDriver, jdbcUrl, jdbcUser, jdbcPassword, checkpointDir) _
+      setupSsc(topics, driverKafkaParams, executorKafkaParams, jdbcDriver, jdbcUrl, jdbcUser, jdbcPassword, checkpointDir) _
     )
     ssc.start()
     ssc.awaitTermination()
@@ -39,7 +50,8 @@ object IdempotentExample {
 
   def setupSsc(
     topics: Set[String],
-    kafkaParams: Map[String, String],
+    driverKafkaParams: Map[String, Object],
+    executorKafkaParams: Map[String, Object],
     jdbcDriver: String,
     jdbcUrl: String,
     jdbcUser: String,
@@ -48,18 +60,18 @@ object IdempotentExample {
   )(): StreamingContext = {
     val ssc = new StreamingContext(new SparkConf, Seconds(60))
 
-    val stream = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder](
-      ssc, kafkaParams, topics)
+    val stream = DirectKafkaInputDStream[String, String](ssc, driverKafkaParams.asJava, executorKafkaParams.asJava, Map().asJava)
+    stream.subscribe(topics.toList.asJava)
 
     stream.foreachRDD { rdd =>
       rdd.foreachPartition { iter =>
         // make sure connection pool is set up on the executor before writing
         SetupJdbc(jdbcDriver, jdbcUrl, jdbcUser, jdbcPassword)
 
-        iter.foreach { case (key, msg) =>
+        iter.foreach { record: ConsumerRecord[String, String] =>
           DB.autoCommit { implicit session =>
             // the unique key for idempotency is just the text of the message itself, for example purposes
-            sql"insert into idem_data(msg) values (${msg})".update.apply
+            sql"insert into idem_data(msg) values (${record.value()})".update.apply
           }
         }
       }

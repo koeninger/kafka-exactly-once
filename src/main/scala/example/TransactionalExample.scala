@@ -1,23 +1,28 @@
 package example
 
-import kafka.serializer.StringDecoder
-import kafka.common.TopicAndPartition
-import kafka.message.MessageAndMetadata
+import org.apache.kafka.common.serialization.StringDeserializer
+import org.apache.kafka.clients.consumer.ConsumerRecord
+import org.apache.kafka.common.TopicPartition
+
 import scalikejdbc._
 import com.typesafe.config.ConfigFactory
 
 import org.apache.spark.{SparkContext, SparkConf, TaskContext}
 import org.apache.spark.SparkContext._
 import org.apache.spark.streaming._
-import org.apache.spark.streaming.dstream.InputDStream
-import org.apache.spark.streaming.kafka.{KafkaUtils, HasOffsetRanges, OffsetRange}
+import org.apache.spark.streaming.kafka.{DirectKafkaInputDStream, HasOffsetRanges, OffsetRange}
+
+import scala.collection.JavaConverters._
 
 /** exactly-once semantics from kafka, by storing offsets in the same transaction as the data */
 object TransactionalExample {
   def main(args: Array[String]): Unit = {
     val conf = ConfigFactory.load
-    val kafkaParams = Map(
-      "metadata.broker.list" -> conf.getString("kafka.brokers")
+    val kafkaParams = Map[String, Object](
+      "bootstrap.servers" -> conf.getString("kafka.brokers"),
+      "key.deserializer" -> classOf[StringDeserializer],
+      "value.deserializer" -> classOf[StringDeserializer],
+      "auto.offset.reset" -> "none"
     )
     val jdbcDriver = conf.getString("jdbc.driver")
     val jdbcUrl = conf.getString("jdbc.url")
@@ -31,7 +36,7 @@ object TransactionalExample {
   }
 
   def setupSsc(
-    kafkaParams: Map[String, String],
+    kafkaParams: Map[String, Object],
     jdbcDriver: String,
     jdbcUrl: String,
     jdbcUser: String,
@@ -45,14 +50,15 @@ object TransactionalExample {
     val fromOffsets = DB.readOnly { implicit session =>
       sql"select topic, part, off from txn_offsets".
         map { resultSet =>
-          TopicAndPartition(resultSet.string(1), resultSet.int(2)) -> resultSet.long(3)
+          new TopicPartition(resultSet.string(1), resultSet.int(2)) -> resultSet.long(3)
         }.list.apply().toMap
     }
 
-    val stream: InputDStream[Long] = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder, Long](
-      ssc, kafkaParams, fromOffsets,
-      // we're just going to count messages, don't care about the contents, so convert each message to a 1
-      (mmd: MessageAndMetadata[String, String]) => 1L)
+    val stream = DirectKafkaInputDStream[String, String](ssc, kafkaParams.asJava, kafkaParams.asJava, Map().asJava)
+    stream.assign(fromOffsets.keys.toList.asJava)
+    fromOffsets.foreach { case (topicPartition, offset) =>
+        stream.seek(topicPartition, offset)
+    }
 
     stream.foreachRDD { rdd =>
       // Cast the rdd to an interface that lets us get an array of OffsetRange
@@ -65,7 +71,7 @@ object TransactionalExample {
         val osr: OffsetRange = offsetRanges(TaskContext.get.partitionId)
 
         // simplest possible "metric", namely a count of messages
-        val metric = iter.sum
+        val metric = iter.size
 
         // localTx is transactional, if metric update or offset update fails, neither will be committed
         DB.localTx { implicit session =>
