@@ -16,13 +16,16 @@ object BasicStream {
       "key.deserializer" -> classOf[StringDeserializer],
       "value.deserializer" -> classOf[StringDeserializer],
       "group.id" -> "example",
-      "auto.offset.reset" -> "none"
+      // this is unfortunately necessary with dynamic topic subscription
+      "auto.offset.reset" -> "earliest"
     ).asJava
     val topics = conf.getString("kafka.topics").split(",").toList.asJava
     val ssc = new StreamingContext(new SparkConf, Seconds(5))
     val stream = DirectKafkaInputDStream[String, String](ssc, kafkaParams, kafkaParams, Map().asJava)
     stream.subscribe(topics)
-    stream.seekToBeginning()
+    // this doesn't actually work, because topics haven't been assigned yet
+    // stream.seekToBeginning()
+
 
     stream.transform { rdd =>
       val offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
@@ -31,7 +34,8 @@ object BasicStream {
         val host = InetAddress.getLocalHost().getHostName()
         val count = iter.size
         Seq(s"${host} ${osr.topic} ${osr.partition} ${count}").toIterator
-      }.sortBy(x => x)
+      }.cache().sortBy(x => x)
+      // without the cache, rdd would get calculated twice, flushing consumer buffers
     }.print()
 
     ssc.start()
