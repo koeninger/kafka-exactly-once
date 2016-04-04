@@ -4,7 +4,7 @@ name := "kafka-exactly-once"
 
 scalaVersion := "2.10.4"
 
-val sparkVersion = "1.3.0"
+val sparkVersion = "1.6.0"
 
 externalResolvers ++= Seq(
   "Local Maven Repository" at "file://"+Path.userHome.absolutePath+"/.m2/repository"
