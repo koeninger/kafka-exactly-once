@@ -34,16 +34,15 @@ object BasicStream {
       }
     )
 
-    stream.transform { rdd =>
+    stream.foreachRDD { rdd =>
       val offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
       rdd.mapPartitions { iter =>
         val osr: OffsetRange = offsetRanges(TaskContext.get.partitionId)
         val host = InetAddress.getLocalHost().getHostName()
         val count = iter.size
         Seq(s"${host} ${osr.topic} ${osr.partition} ${count}").toIterator
-      }.cache().sortBy(x => x)
-      // without the cache, rdd would get calculated twice, flushing consumer buffers
-    }.print()
+      }.collect.sorted.foreach(println)
+    }
 
     ssc.start()
     ssc.awaitTermination()
