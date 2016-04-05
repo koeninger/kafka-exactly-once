@@ -3,7 +3,7 @@ package example
 import org.apache.kafka.clients.consumer.KafkaConsumer
 import org.apache.kafka.common.serialization.ByteArrayDeserializer
 import org.apache.spark.{ SparkConf, TaskContext }
-import org.apache.spark.streaming.{Seconds, StreamingContext}
+import org.apache.spark.streaming.{Milliseconds, StreamingContext}
 import org.apache.spark.streaming.kafka.{ DirectKafkaInputDStream, HasOffsetRanges, OffsetRange }
 import com.typesafe.config.ConfigFactory
 import java.net.InetAddress
@@ -21,7 +21,7 @@ object Throughput {
       "auto.offset.reset" -> "latest"
     )
     val topics = conf.getString("kafka.topics").split(",")
-    val ssc = new StreamingContext(new SparkConf, Seconds(5))
+    val ssc = new StreamingContext(new SparkConf, Milliseconds(conf.getLong("batchDurationMs")))
     val stream = DirectKafkaInputDStream[Array[Byte], Array[Byte]](
       ssc,
       DirectKafkaInputDStream.preferConsistent,
