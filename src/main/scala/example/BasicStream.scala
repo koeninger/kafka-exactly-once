@@ -1,5 +1,6 @@
 package example
 
+import org.apache.kafka.clients.consumer.KafkaConsumer
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.{ SparkConf, TaskContext }
 import org.apache.spark.streaming.{Seconds, StreamingContext}
@@ -16,16 +17,22 @@ object BasicStream {
       "key.deserializer" -> classOf[StringDeserializer],
       "value.deserializer" -> classOf[StringDeserializer],
       "group.id" -> "example",
-      // this is unfortunately necessary with dynamic topic subscription
+      // auto offset reset is unfortunately necessary with dynamic topic subscription
       "auto.offset.reset" -> "earliest"
-    ).asJava
-    val topics = conf.getString("kafka.topics").split(",").toList.asJava
+    )
+    val topics = conf.getString("kafka.topics").split(",")
     val ssc = new StreamingContext(new SparkConf, Seconds(5))
-    val stream = DirectKafkaInputDStream[String, String](ssc, kafkaParams, kafkaParams, Map().asJava)
-    stream.subscribe(topics)
-    // this doesn't actually work, because topics haven't been assigned yet
-    // stream.seekToBeginning()
-
+    val stream = DirectKafkaInputDStream[String, String](
+      ssc,
+      DirectKafkaInputDStream.preferConsistent,
+      kafkaParams.asJava,
+      () => {
+        // Set up the underlying consumer however you need to
+        val consumer = new KafkaConsumer[String, String](kafkaParams.asJava)
+        consumer.subscribe(topics.toList.asJava)
+        consumer
+      }
+    )
 
     stream.transform { rdd =>
       val offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges

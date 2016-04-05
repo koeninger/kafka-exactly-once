@@ -1,5 +1,6 @@
 package example
 
+import org.apache.kafka.clients.consumer.KafkaConsumer
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.kafka.clients.consumer.ConsumerRecord
 
@@ -24,7 +25,7 @@ object IdempotentExample {
       "value.deserializer" -> classOf[StringDeserializer],
       "group.id" -> "example",
       // start from the smallest available offset, ie the beginning of the kafka log
-      "auto.offset.reset" -> "smallest"
+      "auto.offset.reset" -> "earliest"
     )
     val executorKafkaParams = driverKafkaParams ++ Map(
       "group.id" -> "example-executor",
@@ -60,8 +61,17 @@ object IdempotentExample {
   )(): StreamingContext = {
     val ssc = new StreamingContext(new SparkConf, Seconds(60))
 
-    val stream = DirectKafkaInputDStream[String, String](ssc, driverKafkaParams.asJava, executorKafkaParams.asJava, Map().asJava)
-    stream.subscribe(topics.toList.asJava)
+    val stream = DirectKafkaInputDStream[String, String](
+      ssc,
+      DirectKafkaInputDStream.preferConsistent,
+      executorKafkaParams.asJava,
+      () => {
+        // Set up the underlying consumer however you need to
+        val consumer = new KafkaConsumer[String, String](driverKafkaParams.asJava)
+        consumer.subscribe(topics.toList.asJava)
+        consumer
+      }
+    )
 
     stream.foreachRDD { rdd =>
       rdd.foreachPartition { iter =>

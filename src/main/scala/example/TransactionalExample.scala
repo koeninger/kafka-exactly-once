@@ -1,7 +1,7 @@
 package example
 
+import org.apache.kafka.clients.consumer.{ ConsumerRecord, KafkaConsumer }
 import org.apache.kafka.common.serialization.StringDeserializer
-import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.common.TopicPartition
 
 import scalikejdbc._
@@ -54,11 +54,20 @@ object TransactionalExample {
         }.list.apply().toMap
     }
 
-    val stream = DirectKafkaInputDStream[String, String](ssc, kafkaParams.asJava, kafkaParams.asJava, Map().asJava)
-    stream.assign(fromOffsets.keys.toList.asJava)
-    fromOffsets.foreach { case (topicPartition, offset) =>
-        stream.seek(topicPartition, offset)
-    }
+    val stream = DirectKafkaInputDStream[String, String](
+      ssc,
+      DirectKafkaInputDStream.preferConsistent,
+      kafkaParams.asJava,
+      () => {
+        // Set up the underlying consumer however you need to
+        val consumer = new KafkaConsumer[String, String](kafkaParams.asJava)
+        consumer.assign(fromOffsets.keys.toList.asJava)
+        fromOffsets.foreach { case (topicPartition, offset) =>
+            consumer.seek(topicPartition, offset)
+        }
+        consumer
+      }
+    )
 
     stream.foreachRDD { rdd =>
       // Cast the rdd to an interface that lets us get an array of OffsetRange
