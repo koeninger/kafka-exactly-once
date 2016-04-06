@@ -20,7 +20,7 @@ object Throughput {
       ssc, kafkaParams, topics)
 
     stream.foreachRDD { rdd =>
-      println(rdd.map(_._2.size).fold(0)(_+_))
+      println(rdd.map(_._2.size).fold(0L)(_+_))
     }
 
     ssc.start()
