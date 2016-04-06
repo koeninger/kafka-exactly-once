@@ -35,7 +35,7 @@ object Throughput {
     )
 
     stream.foreachRDD { rdd =>
-      println(rdd.map(_.value.size).reduce(_+_))
+      println(rdd.map(_.value.size.toLong).fold(0L)(_+_))
     }
 
     ssc.start()
