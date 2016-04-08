@@ -22,6 +22,8 @@ object TransactionalExample {
       "bootstrap.servers" -> conf.getString("kafka.brokers"),
       "key.deserializer" -> classOf[StringDeserializer],
       "value.deserializer" -> classOf[StringDeserializer],
+      "group.id" -> "transactional-example",
+      "enable.auto.commit" -> (false: java.lang.Boolean),
       "auto.offset.reset" -> "none"
     )
     val jdbcDriver = conf.getString("jdbc.driver")

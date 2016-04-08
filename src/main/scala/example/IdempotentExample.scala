@@ -19,17 +19,15 @@ object IdempotentExample {
   def main(args: Array[String]): Unit = {
     val conf = ConfigFactory.load
     val topics = conf.getString("kafka.topics").split(",").toSet
-    val driverKafkaParams = Map[String, Object](
+    val kafkaParams = Map[String, Object](
       "bootstrap.servers" -> conf.getString("kafka.brokers"),
       "key.deserializer" -> classOf[StringDeserializer],
       "value.deserializer" -> classOf[StringDeserializer],
-      "group.id" -> "example",
+      "group.id" -> "idempotent-example",
+      // kafka autocommit can happen before batch is finished, turn it off in favor of checkpoint only
+      "enable.auto.commit" -> (false: java.lang.Boolean),
       // start from the smallest available offset, ie the beginning of the kafka log
       "auto.offset.reset" -> "earliest"
-    )
-    val executorKafkaParams = driverKafkaParams ++ Map(
-      "group.id" -> "example-executor",
-      "auto.offset.reset" -> "none"
     )
 
     val jdbcDriver = conf.getString("jdbc.driver")
@@ -43,7 +41,7 @@ object IdempotentExample {
 
     val ssc = StreamingContext.getOrCreate(
       checkpointDir,
-      setupSsc(topics, driverKafkaParams, executorKafkaParams, jdbcDriver, jdbcUrl, jdbcUser, jdbcPassword, checkpointDir) _
+      setupSsc(topics, kafkaParams, jdbcDriver, jdbcUrl, jdbcUser, jdbcPassword, checkpointDir) _
     )
     ssc.start()
     ssc.awaitTermination()
@@ -51,8 +49,7 @@ object IdempotentExample {
 
   def setupSsc(
     topics: Set[String],
-    driverKafkaParams: Map[String, Object],
-    executorKafkaParams: Map[String, Object],
+    kafkaParams: Map[String, Object],
     jdbcDriver: String,
     jdbcUrl: String,
     jdbcUser: String,
@@ -64,10 +61,10 @@ object IdempotentExample {
     val stream = DirectKafkaInputDStream[String, String](
       ssc,
       DirectKafkaInputDStream.preferConsistent,
-      executorKafkaParams.asJava,
+      kafkaParams.asJava,
       () => {
         // Set up the underlying consumer however you need to
-        val consumer = new KafkaConsumer[String, String](driverKafkaParams.asJava)
+        val consumer = new KafkaConsumer[String, String](kafkaParams.asJava)
         consumer.subscribe(topics.toList.asJava)
         consumer
       }
