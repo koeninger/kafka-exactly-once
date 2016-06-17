@@ -21,7 +21,7 @@ libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-network-shuffle" % sparkVersion % "provided",
   ("org.apache.spark" %% "spark-streaming" % sparkVersion % "provided").
     exclude("org.apache.spark", "spark-core_2.11"),
-  ("org.apache.spark" %% "spark-streaming-kafka-beta" % sparkVersion).
+  ("org.apache.spark" %% "spark-streaming-kafka-0-10" % sparkVersion).
     exclude("org.apache.spark", "spark-core_2.11"),
   ("org.scalikejdbc" %% "scalikejdbc" % "2.2.1").
     exclude("org.slf4j", "slf4j-api"),
