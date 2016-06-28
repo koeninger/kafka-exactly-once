@@ -2,7 +2,7 @@ package example
 
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.{SparkContext, SparkConf}
-import org.apache.spark.streaming.kafka.{ KafkaRDD, OffsetRange }
+import org.apache.spark.streaming.kafka.{ KafkaUtils, OffsetRange, PreferConsistent }
 import scala.collection.JavaConverters._
 import com.typesafe.config.ConfigFactory
 
@@ -22,7 +22,7 @@ object BasicRDD {
       OffsetRange("test", 1, 0, 100)
     )
 
-    val rdd = KafkaRDD[String, String](sc, kafkaParams, offsetRanges, Map().asJava)
+    val rdd = KafkaUtils.createRDD[String, String](sc, kafkaParams, offsetRanges, PreferConsistent)
 
     rdd.collect.foreach(println)
     sc.stop

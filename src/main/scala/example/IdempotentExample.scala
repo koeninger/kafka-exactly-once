@@ -10,7 +10,7 @@ import com.typesafe.config.ConfigFactory
 import org.apache.spark.{SparkContext, SparkConf}
 import org.apache.spark.SparkContext._
 import org.apache.spark.streaming._
-import org.apache.spark.streaming.kafka.{DirectKafkaInputDStream, HasOffsetRanges}
+import org.apache.spark.streaming.kafka.{ KafkaUtils, HasOffsetRanges, PreferConsistent, Subscribe }
 
 import scala.collection.JavaConverters._
 
@@ -58,16 +58,10 @@ object IdempotentExample {
   )(): StreamingContext = {
     val ssc = new StreamingContext(new SparkConf, Seconds(60))
 
-    val stream = DirectKafkaInputDStream[String, String](
+    val stream = KafkaUtils.createDirectStream[String, String](
       ssc,
-      DirectKafkaInputDStream.preferConsistent,
-      kafkaParams.asJava,
-      () => {
-        // Set up the underlying consumer however you need to
-        val consumer = new KafkaConsumer[String, String](kafkaParams.asJava)
-        consumer.subscribe(topics.toList.asJava)
-        consumer
-      }
+      PreferConsistent,
+      Subscribe[String, String](topics, kafkaParams)
     )
 
     stream.foreachRDD { rdd =>

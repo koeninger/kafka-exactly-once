@@ -4,7 +4,7 @@ import org.apache.kafka.clients.consumer.KafkaConsumer
 import org.apache.kafka.common.serialization.ByteArrayDeserializer
 import org.apache.spark.{ SparkConf, TaskContext }
 import org.apache.spark.streaming.{Milliseconds, StreamingContext}
-import org.apache.spark.streaming.kafka.{ DirectKafkaInputDStream, HasOffsetRanges, OffsetRange }
+import org.apache.spark.streaming.kafka.{ KafkaUtils, HasOffsetRanges, OffsetRange, PreferConsistent, Subscribe }
 import com.typesafe.config.ConfigFactory
 import java.net.InetAddress
 import scala.collection.JavaConverters._
@@ -22,16 +22,10 @@ object Throughput {
     )
     val topics = conf.getString("kafka.topics").split(",")
     val ssc = new StreamingContext(new SparkConf, Milliseconds(conf.getLong("batchDurationMs")))
-    val stream = DirectKafkaInputDStream[Array[Byte], Array[Byte]](
+    val stream = KafkaUtils.createDirectStream[Array[Byte], Array[Byte]](
       ssc,
-      DirectKafkaInputDStream.preferConsistent,
-      kafkaParams.asJava,
-      () => {
-        // Set up the underlying consumer however you need to
-        val consumer = new KafkaConsumer[Array[Byte], Array[Byte]](kafkaParams.asJava)
-        consumer.subscribe(topics.toList.asJava)
-        consumer
-      }
+      PreferConsistent,
+      Subscribe[Array[Byte], Array[Byte]](topics, kafkaParams)
     )
 
     stream.foreachRDD { rdd =>

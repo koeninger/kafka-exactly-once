@@ -10,7 +10,7 @@ import com.typesafe.config.ConfigFactory
 import org.apache.spark.{SparkContext, SparkConf, TaskContext}
 import org.apache.spark.SparkContext._
 import org.apache.spark.streaming._
-import org.apache.spark.streaming.kafka.{DirectKafkaInputDStream, HasOffsetRanges, OffsetRange}
+import org.apache.spark.streaming.kafka.{ KafkaUtils, HasOffsetRanges, OffsetRange, PreferConsistent, Assign }
 
 import scala.collection.JavaConverters._
 
@@ -56,19 +56,10 @@ object TransactionalExample {
         }.list.apply().toMap
     }
 
-    val stream = DirectKafkaInputDStream[String, String](
+    val stream = KafkaUtils.createDirectStream[String, String](
       ssc,
-      DirectKafkaInputDStream.preferConsistent,
-      kafkaParams.asJava,
-      () => {
-        // Set up the underlying consumer however you need to
-        val consumer = new KafkaConsumer[String, String](kafkaParams.asJava)
-        consumer.assign(fromOffsets.keys.toList.asJava)
-        fromOffsets.foreach { case (topicPartition, offset) =>
-            consumer.seek(topicPartition, offset)
-        }
-        consumer
-      }
+      PreferConsistent,
+      Assign[String, String](fromOffsets.keys.toList, kafkaParams, fromOffsets)
     )
 
     stream.foreachRDD { rdd =>
