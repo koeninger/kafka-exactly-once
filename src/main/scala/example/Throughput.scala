@@ -4,7 +4,9 @@ import org.apache.kafka.clients.consumer.KafkaConsumer
 import org.apache.kafka.common.serialization.ByteArrayDeserializer
 import org.apache.spark.{ SparkConf, TaskContext }
 import org.apache.spark.streaming.{Milliseconds, StreamingContext}
-import org.apache.spark.streaming.kafka.{ KafkaUtils, HasOffsetRanges, OffsetRange, PreferConsistent, Subscribe }
+import org.apache.spark.streaming.kafka010.{ KafkaUtils, HasOffsetRanges, OffsetRange }
+import org.apache.spark.streaming.kafka010.ConsumerStrategies.Subscribe
+import org.apache.spark.streaming.kafka010.LocationStrategies.PreferConsistent
 import com.typesafe.config.ConfigFactory
 import java.net.InetAddress
 import scala.collection.JavaConverters._
@@ -17,7 +19,6 @@ object Throughput {
       "key.deserializer" -> classOf[ByteArrayDeserializer],
       "value.deserializer" -> classOf[ByteArrayDeserializer],
       "group.id" -> "example",
-      // auto offset reset is unfortunately necessary with dynamic topic subscription
       "auto.offset.reset" -> "latest"
     )
     val topics = conf.getString("kafka.topics").split(",")

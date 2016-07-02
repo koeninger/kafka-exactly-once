@@ -1,10 +1,11 @@
 package example
 
-import org.apache.kafka.clients.consumer.KafkaConsumer
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.{ SparkConf, TaskContext }
 import org.apache.spark.streaming.{Seconds, StreamingContext}
-import org.apache.spark.streaming.kafka.{ KafkaUtils, HasOffsetRanges, OffsetRange, PreferConsistent, Subscribe }
+import org.apache.spark.streaming.kafka010.{ KafkaUtils, HasOffsetRanges, OffsetRange }
+import org.apache.spark.streaming.kafka010.ConsumerStrategies.Subscribe
+import org.apache.spark.streaming.kafka010.LocationStrategies.PreferConsistent
 import com.typesafe.config.ConfigFactory
 import java.net.InetAddress
 import scala.collection.JavaConverters._
@@ -17,8 +18,7 @@ object BasicStream {
       "key.deserializer" -> classOf[StringDeserializer],
       "value.deserializer" -> classOf[StringDeserializer],
       "group.id" -> "example",
-      // auto offset reset is unfortunately necessary with dynamic topic subscription
-      "auto.offset.reset" -> "earliest"
+      "auto.offset.reset" -> "latest"
     )
     val topics = conf.getString("kafka.topics").split(",")
     val ssc = new StreamingContext(new SparkConf, Seconds(5))

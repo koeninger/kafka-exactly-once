@@ -2,7 +2,8 @@ package example
 
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.{SparkContext, SparkConf}
-import org.apache.spark.streaming.kafka.{ KafkaUtils, OffsetRange, PreferConsistent }
+import org.apache.spark.streaming.kafka010.{ KafkaUtils, OffsetRange }
+import org.apache.spark.streaming.kafka010.LocationStrategies.PreferConsistent
 import scala.collection.JavaConverters._
 import com.typesafe.config.ConfigFactory
 

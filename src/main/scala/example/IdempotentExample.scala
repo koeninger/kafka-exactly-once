@@ -1,6 +1,5 @@
 package example
 
-import org.apache.kafka.clients.consumer.KafkaConsumer
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.kafka.clients.consumer.ConsumerRecord
 
@@ -10,7 +9,9 @@ import com.typesafe.config.ConfigFactory
 import org.apache.spark.{SparkContext, SparkConf}
 import org.apache.spark.SparkContext._
 import org.apache.spark.streaming._
-import org.apache.spark.streaming.kafka.{ KafkaUtils, HasOffsetRanges, PreferConsistent, Subscribe }
+import org.apache.spark.streaming.kafka010.{ KafkaUtils, HasOffsetRanges }
+import org.apache.spark.streaming.kafka010.ConsumerStrategies.Subscribe
+import org.apache.spark.streaming.kafka010.LocationStrategies.PreferConsistent
 
 import scala.collection.JavaConverters._
 
