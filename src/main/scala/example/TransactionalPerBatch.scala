@@ -1,16 +1,20 @@
 package example
 
-import kafka.serializer.StringDecoder
-import kafka.common.TopicAndPartition
-import kafka.message.MessageAndMetadata
+import org.apache.kafka.clients.consumer.ConsumerRecord
+import org.apache.kafka.common.serialization.StringDeserializer
+import org.apache.kafka.common.TopicPartition
+
 import scalikejdbc._
 import com.typesafe.config.ConfigFactory
 
 import org.apache.spark.{SparkContext, SparkConf, TaskContext}
 import org.apache.spark.SparkContext._
 import org.apache.spark.streaming._
-import org.apache.spark.streaming.dstream.InputDStream
-import org.apache.spark.streaming.kafka.{KafkaUtils, HasOffsetRanges, OffsetRange}
+import org.apache.spark.streaming.kafka010.{ KafkaUtils, HasOffsetRanges, OffsetRange }
+import org.apache.spark.streaming.kafka010.ConsumerStrategies.Assign
+import org.apache.spark.streaming.kafka010.LocationStrategies.PreferConsistent
+
+import scala.collection.JavaConverters._
 
 /** exactly-once semantics from kafka, by storing offsets in the same transaction as the results
   Offsets and results will be stored per-batch, on the driver
@@ -18,8 +22,13 @@ import org.apache.spark.streaming.kafka.{KafkaUtils, HasOffsetRanges, OffsetRang
 object TransactionalPerBatch {
   def main(args: Array[String]): Unit = {
     val conf = ConfigFactory.load
-    val kafkaParams = Map(
-      "metadata.broker.list" -> conf.getString("kafka.brokers")
+    val kafkaParams = Map[String, Object](
+      "bootstrap.servers" -> conf.getString("kafka.brokers"),
+      "key.deserializer" -> classOf[StringDeserializer],
+      "value.deserializer" -> classOf[StringDeserializer],
+      "group.id" -> "transactional-example",
+      "enable.auto.commit" -> (false: java.lang.Boolean),
+      "auto.offset.reset" -> "none"
     )
     val jdbcDriver = conf.getString("jdbc.driver")
     val jdbcUrl = conf.getString("jdbc.url")
@@ -33,7 +42,7 @@ object TransactionalPerBatch {
   }
 
   def setupSsc(
-    kafkaParams: Map[String, String],
+    kafkaParams: Map[String, Object],
     jdbcDriver: String,
     jdbcUrl: String,
     jdbcUser: String,
@@ -47,14 +56,18 @@ object TransactionalPerBatch {
     val fromOffsets = DB.readOnly { implicit session =>
       sql"select topic, part, off from txn_offsets".
         map { resultSet =>
-          TopicAndPartition(resultSet.string(1), resultSet.int(2)) -> resultSet.long(3)
+          new TopicPartition(resultSet.string(1), resultSet.int(2)) -> resultSet.long(3)
         }.list.apply().toMap
     }
 
-    val stream: InputDStream[(String,Long)] = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder, (String, Long)](
-      ssc, kafkaParams, fromOffsets,
+    val stream = KafkaUtils.createDirectStream[String, String](
+      ssc,
+      PreferConsistent,
+      Assign[String, String](fromOffsets.keys.toList, kafkaParams, fromOffsets)
+    ).map { record =>
       // we're just going to count messages per topic, don't care about the contents, so convert each message to (topic, 1)
-      (mmd: MessageAndMetadata[String, String]) => (mmd.topic, 1L))
+      (record.topic, 1L)
+    }
 
     stream.foreachRDD { rdd =>
       // Note this block is running on the driver

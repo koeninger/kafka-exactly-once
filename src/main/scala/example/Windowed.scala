@@ -1,9 +1,11 @@
 package example
 
-import kafka.serializer.StringDecoder
+import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.{SparkConf, TaskContext}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
-import org.apache.spark.streaming.kafka.{KafkaUtils, HasOffsetRanges, OffsetRange}
+import org.apache.spark.streaming.kafka010.{KafkaUtils, HasOffsetRanges, OffsetRange}
+import org.apache.spark.streaming.kafka010.ConsumerStrategies.Subscribe
+import org.apache.spark.streaming.kafka010.LocationStrategies.PreferConsistent
 import com.typesafe.config.ConfigFactory
 
 /** example of how windowing changes partitioning */
@@ -12,12 +14,19 @@ object Windowed {
     val conf = ConfigFactory.load
     val ssc = new StreamingContext(new SparkConf, Seconds(1))
 
-    val kafkaParams = Map("metadata.broker.list" -> conf.getString("kafka.brokers"))
+    val kafkaParams = Map[String, Object](
+      "bootstrap.servers" -> conf.getString("kafka.brokers"),
+      "key.deserializer" -> classOf[StringDeserializer],
+      "value.deserializer" -> classOf[StringDeserializer],
+      "group.id" -> "transactional-example",
+      "enable.auto.commit" -> (false: java.lang.Boolean),
+      "auto.offset.reset" -> "none"
+    )
 
     val topics = conf.getString("kafka.topics").split(",").toSet
 
-    val stream = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder](
-      ssc, kafkaParams, topics)
+    val stream = KafkaUtils.createDirectStream[String, String](
+      ssc, PreferConsistent, Subscribe[String, String](topics, kafkaParams))
 
     // reference to the most recently generated input rdd's offset ranges
     var offsetRanges = Array[OffsetRange]()
