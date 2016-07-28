@@ -1,8 +1,10 @@
 package example
 
+import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.{ SparkConf, TaskContext }
-import org.apache.spark.streaming.{Seconds, StreamingContext}
+import org.apache.spark.streaming.{ Seconds, StreamingContext }
+import org.apache.spark.streaming.dstream.InputDStream
 import org.apache.spark.streaming.kafka010.{ KafkaUtils, HasOffsetRanges, OffsetRange }
 import org.apache.spark.streaming.kafka010.ConsumerStrategies.Subscribe
 import org.apache.spark.streaming.kafka010.LocationStrategies.PreferConsistent
@@ -22,11 +24,13 @@ object BasicStream {
     )
     val topics = conf.getString("kafka.topics").split(",")
     val ssc = new StreamingContext(new SparkConf, Seconds(5))
-    val stream = KafkaUtils.createDirectStream[String, String](
+    val stream: InputDStream[ConsumerRecord[String, String]] = KafkaUtils.createDirectStream[String, String](
       ssc,
       PreferConsistent,
       Subscribe[String, String](topics, kafkaParams)
     )
+
+    stream.map(record => (record.key, record.value))
 
     stream.foreachRDD { rdd =>
       val offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
