@@ -80,7 +80,7 @@ DirectKafkaInputDStream is a stream of batches.  Each batch corresponds to a Kaf
 
 ### OffsetRange
 
-An [OffsetRange](https://github.com/apache/spark/blob/v1.3.0-rc1/external/kafka/src/main/scala/org/apache/spark/streaming/kafka/OffsetRange.scala) represents the lower and upper boundaries for a particular sequence of messages in a given Kafka topic and partition.  The following data structure:
+An [OffsetRange](https://github.com/apache/spark/blob/branch-1.3/external/kafka/src/main/scala/org/apache/spark/streaming/kafka/OffsetRange.scala) represents the lower and upper boundaries for a particular sequence of messages in a given Kafka topic and partition.  The following data structure:
 
 ```scala
     OffsetRange("visits", 2, 300, 310)
