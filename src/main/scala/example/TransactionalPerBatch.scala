@@ -103,16 +103,18 @@ Got $metricRows rows affected instead of 1 when attempting to update metrics for
 
         // store offsets
         offsetRanges.foreach { osr =>
-          val offsetRows = sql"""
+          {
+            val offsetRows = sql"""
 update txn_offsets set off = ${osr.untilOffset}
   where topic = ${osr.topic} and part = ${osr.partition} and off = ${osr.fromOffset}
 """.update.apply()
-          if (offsetRows != 1) {
-            throw new Exception(s"""
+            if (offsetRows != 1) {
+              throw new Exception(s"""
 Got $offsetRows rows affected instead of 1 when attempting to update offsets for
  ${osr.topic} ${osr.partition} ${osr.fromOffset} -> ${osr.untilOffset}
 Was a partition repeated after a worker failure?
 """)
+            }
           }
         }
       }
