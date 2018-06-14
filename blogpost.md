@@ -15,18 +15,23 @@ The new API for both Kafka RDD and DStream is in the spark-streaming-kafka artif
 
 SBT dependency:
 
+```scala
     libraryDependencies += "org.apache.spark" %% "spark-streaming-kafka" % "1.3.0"
+```
 
 Maven dependency:
 
+```xml
     <dependency>
       <groupId>org.apache.spark</groupId>
       <artifactId>spark-streaming-kafka_2.10</artifactId>
       <version>1.3.0</version>
     </dependency>
+```
 
 To read from Kafka in a Spark Streaming job, use KafkaUtils.createDirectStream:
 
+```scala
     import kafka.serializer.StringDecoder
     import org.apache.spark.SparkConf
     import org.apache.spark.streaming.{Seconds, StreamingContext}
@@ -41,12 +46,13 @@ To read from Kafka in a Spark Streaming job, use KafkaUtils.createDirectStream:
 
     val stream = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder](
       ssc, kafkaParams, topics)
-
+```
 
 The call to createDirectStream returns a stream of tuples formed from each Kafka message's key and value.  The exposed return type is InputDStream[(K, V)], where K and V in this case are both String.  The private implementation is DirectKafkaInputDStream.  There are other overloads of createDirectStream that allow you to access message metadata, and to specify the exact per-topic-and-partition starting offsets.
 
 To read from Kafka in a non-streaming Spark job, use KafkaUtils.createRDD:
 
+```scala
     import kafka.serializer.StringDecoder
     import org.apache.spark.{SparkContext, SparkConf}
     import org.apache.spark.streaming.kafka.{KafkaUtils, OffsetRange}
@@ -64,6 +70,7 @@ To read from Kafka in a non-streaming Spark job, use KafkaUtils.createRDD:
 
     val rdd = KafkaUtils.createRDD[String, String, StringDecoder, StringDecoder](
       sc, kafkaParams, offsetRanges)
+```
 
 The call to createRDD returns a single RDD of (key, value) tuples for each Kafka message in the specified batch of offset ranges.  The exposed return type is RDD[(K, V)], the private implementation is KafkaRDD.  There are other overloads of createRDD that allow you to access message metadata, and to specify the current per-topic-and-partition Kafka leaders.
 
@@ -73,15 +80,19 @@ DirectKafkaInputDStream is a stream of batches.  Each batch corresponds to a Kaf
 
 ### OffsetRange
 
-An [OffsetRange](https://github.com/apache/spark/blob/v1.3.0-rc1/external/kafka/src/main/scala/org/apache/spark/streaming/kafka/OffsetRange.scala) represents the lower and upper boundaries for a particular sequence of messages in a given Kafka topic and partition.  The following data structure:
+An [OffsetRange](https://github.com/apache/spark/blob/branch-1.3/external/kafka/src/main/scala/org/apache/spark/streaming/kafka/OffsetRange.scala) represents the lower and upper boundaries for a particular sequence of messages in a given Kafka topic and partition.  The following data structure:
 
+```scala
     OffsetRange("visits", 2, 300, 310)
+```
 
 identifies the 10 messages from offset 300 (inclusive) until offset 310 (exclusive) in partition 2 of the "visits" topic.  Note that it does not actually contain the contents of the messages, it's just a way of identifying the range.
 
 Also note that because Kafka ordering is only defined on a per-partition basis, the messages referred to by
 
+```scala
     OffsetRange("visits", 3, 300, 310)
+```
 
 may be from a completely different time period; even though the offsets are the same as above, the partition is different.
 
@@ -137,6 +148,7 @@ Note that because Kafka is being treated as a durable store of messages, not a t
 
 One other implementation detail is a public interface, HasOffsetRanges, with a single method returning an array of OffsetRange.  KafkaRDD implements this interface, allowing you to obtain topic and offset information on a per-partition basis.
 
+```scala
       val stream = KafkaUtils.createDirectStream(...)
       ...      
       stream.foreachRDD { rdd =>
@@ -153,11 +165,13 @@ One other implementation detail is a public interface, HasOffsetRanges, with a s
           val begin = osr.fromOffset
           val end = osr.untilOffset
           ...
+```
 
 The reason for this layer of indirection is because the static type used by DStream methods like foreachRDD and transform is just RDD, not the type of the underlying (and in this case, private) implementation.  Because the DStream returned by createDirectStream generates batches of KafkaRDD, you can safely cast to HasOffsetRanges.
 
 Also note that because of the 1:1 correspondence between offset ranges and rdd partitions, the indexes of the rdd partitions correspond to the indexes into the array returned by offsetRanges.  Similarly, all of the messages in the given Spark partition are from the same Kafka topic. However, this 1:1 correspondence only lasts until the first Spark transformation that incurs a shuffle (e.g. reduceByKey), because shuffles can repartition the data.
 
+```scala
         // WON'T DO WHAT YOU WANT
         rdd.mapPartitionsWithIndex { (i, iter) =>
           val osr: OffsetRange = offsets(i)
@@ -168,6 +182,7 @@ Also note that because of the 1:1 correspondence between offset ranges and rdd p
         .foreachPartition {
            // now the partition contains values from more than one topic
         }
+```
 
 Because of this, if you want to apply a per-partition transformation using offset range information, it's easiest to use normal Scala code to do the work inside a single Spark mapPartitionsWithIndex call.
 
@@ -215,6 +230,7 @@ There's a complete sample of this idea at [IdempotentExample.scala](https://gith
 
 The important points here are that the [schema](https://github.com/koeninger/kafka-exactly-once/blob/master/schema.sql) is set up with a unique key and a rule to allow for no-op duplicate inserts.  For this example, the message body is being used as the unique key, but any appropriate key could be used.
 
+```scala
     stream.foreachRDD { rdd =>
       rdd.foreachPartition { iter =>
         // make sure connection pool is set up on the executor before writing
@@ -228,10 +244,13 @@ The important points here are that the [schema](https://github.com/koeninger/kaf
         }
       }
     }
+```
 
 In the case of a failure, the above output action can safely be retried.  Checkpointing the stream ensures that offset ranges are saved as they are generated.  Checkpointing is accomplished in the usual way, by defining a function that configures the streaming context (ssc) and sets up the stream, then calling
 
+```scala
     ssc.checkpoint(checkpointDir)
+```
 
 before returning the ssc.  See the [streaming guide](http://spark.apache.org/docs/latest/streaming-programming-guide.html#checkpointing) for more details.
 
@@ -243,6 +262,7 @@ For data stores that support transactions, saving offsets in the same transactio
 
 The first important point is that the stream is started using the last successfully committed offsets as the beginning point.  This allows for failure recovery:
 
+```scala
     // begin from the the offsets committed to the database
     val fromOffsets = DB.readOnly { implicit session =>
       sql"select topic, part, off from txn_offsets".
@@ -255,11 +275,13 @@ The first important point is that the stream is started using the last successfu
       ssc, kafkaParams, fromOffsets,
       // we're just going to count messages, don't care about the contents, so convert each message to a 1
       (mmd: MessageAndMetadata[String, String]) => 1L)
+```
 
 For the very first time the job is run, the table can be pre-loaded with appropriate starting offsets.
 
 The example accesses offset ranges on a per-partition basis, as mentioned in the discussion of HasOffsetRanges above.  Also notice that some iterator methods, such as map, are lazy.  If you're setting up transient state, like a network or database connection, by the time the map is fully forced the connection may already be closed.  In that case, be sure to instead use methods like foreach, that eagerly consume the iterator.
 
+```scala
       rdd.foreachPartition { iter =>
         val osr: OffsetRange = offsetRanges(TaskContext.get.partitionId)
 
@@ -271,9 +293,11 @@ The example accesses offset ranges on a per-partition basis, as mentioned in the
 
         // close the connection
       }
+```
 
 The final thing to notice about the example is that it's important to ensure that saving the results and saving the offsets either both succeed, or both fail.  Storing offsets should fail if the prior committed offset doesn't equal the beginning of the current offset range; this prevents gaps or repeats.  Kafka semantics ensure that there aren't gaps in messages within a range of offsets (if you're especially concerned, you could verify by comparing the size of the offset range to the number of messages).
 
+```scala
     // localTx is transactional, if metric update or offset update fails, neither will be committed
     DB.localTx { implicit session =>
       // store metric data
@@ -294,6 +318,7 @@ The final thing to notice about the example is that it's important to ensure tha
         throw new Exception("...")
       }
     }
+```
 
 The example code is throwing an exception, which will result in a transaction rollback.  Other failure handling strategies may be appropriate, as long as they result in a transaction rollback as well.
 
